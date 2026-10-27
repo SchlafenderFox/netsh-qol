@@ -26,7 +26,7 @@ Picking a hint with Tab (or closing the dropdown) before Enter avoids this entir
 
 ## Install
 
-1. Install the official **LuaJIT Support** mod (`luajit-support`) from the [modding kit releases](https://github.com/treefarmer741/Tower-Networking-Inc-modding-kit/releases) — take `luajit-support.zip` from a **GNU** build (`continuous-gnu-beta` for the beta branch, `continuous-gnu-main` for the main branch) and extract it so that `mods/luajit-support/entry.elf` exists.
+1. Install the official **LuaJIT Support** mod: download `luajit-support.zip` from [Continuous (gnu) - beta](https://github.com/treefarmer741/Tower-Networking-Inc-modding-kit/releases/tag/continuous-gnu-beta) and extract it so that `mods/luajit-support/entry.elf` exists.
 2. Copy the `netsh-qol` folder into the game's mods folder:
    - Windows: `%APPDATA%\Godot\app_userdata\Tower Networking Inc\mods\`
    - Linux: `~/.local/share/godot/app_userdata/Tower Networking Inc/mods/`
@@ -86,7 +86,7 @@ Any testing and bug reports are very welcome! Please [open an issue](https://git
 
 ## Встановлення
 
-1. Встанови офіційний мод **LuaJIT Support** (`luajit-support`) з [релізів modding kit](https://github.com/treefarmer741/Tower-Networking-Inc-modding-kit/releases) — візьми `luajit-support.zip` зі збірки **GNU** (`continuous-gnu-beta` для бета-гілки, `continuous-gnu-main` для основної) і розпакуй так, щоб існував файл `mods/luajit-support/entry.elf`.
+1. Встанови офіційний мод **LuaJIT Support**: завантаж `luajit-support.zip` з [Continuous (gnu) - beta](https://github.com/treefarmer741/Tower-Networking-Inc-modding-kit/releases/tag/continuous-gnu-beta) і розпакуй так, щоб існував файл `mods/luajit-support/entry.elf`.
 2. Скопіюй папку `netsh-qol` у папку модів гри:
    - Windows: `%APPDATA%\Godot\app_userdata\Tower Networking Inc\mods\`
    - Linux: `~/.local/share/godot/app_userdata/Tower Networking Inc/mods/`
