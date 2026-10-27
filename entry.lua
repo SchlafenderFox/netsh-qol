@@ -44,7 +44,6 @@ local KEY_SPACE = 32
 
 local input = nil
 local ticks = 0
-local last_search_tick = -1000
 
 -- field state as of the previous tick
 local prev = nil            -- { text, caret, cc_n, cc_sel }
@@ -59,22 +58,18 @@ local trace_ticks = 0       -- debug: log the field for a few ticks after we edi
 
 local function log(msg) if config.debug_logging then print(msg) end end
 
-local function is_valid(node)
-    if node == nil then return false end
-    local ok, v = pcall(function() return node:is_inside_tree() end)
-    return ok and v == true
-end
-
+-- While the world is being torn down (leaving to the menu) get_game_world()
+-- returns a null object and the next call on it throws outside pcall's reach,
+-- even while get_devices() still lists devices. The base UI lives above the
+-- world and shares its viewport, so ask it for the focused control instead.
+-- Never keep a node across ticks (a freed node faults the sandbox): look up the
+-- focused control afresh each time and use it only if it is the netsh field.
 local function find_input()
-    if is_valid(input) then return input end
     input = nil
-    if ticks - last_search_tick < 30 then return nil end
-    last_search_tick = ticks
     pcall(function()
-        local f = ModApiV1.get_game_world():get_tree():get_root():gui_get_focus_owner()
+        local f = ModApiV1.get_base_ui():get_viewport():gui_get_focus_owner()
         if f ~= nil and tostring(f:get_path()):find("NetShell/TextInput", 1, true) then
             input = f
-            log("netsh input found")
         end
     end)
     return input
@@ -344,12 +339,8 @@ end
 function on_game_tick(delta)
     ticks = ticks + 1
     pcall(function()
-        local inp = input
-        if not is_valid(inp) then
-            if ticks % 30 == 0 then find_input() end
-            return
-        end
-        if not has_focus(inp) then prev = nil; return end
+        local inp = find_input()
+        if inp == nil then prev = nil; return end
         local cur = read_state(inp)
         if trace_ticks > 0 then
             trace_ticks = trace_ticks - 1
