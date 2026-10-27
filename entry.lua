@@ -251,19 +251,43 @@ end
 
 -- 4. paste fix ---------------------------------------------------------------
 
+local caret_hold = nil -- { text, caret, until_tick }: keep the caret after a paste
+
+-- The game either appends the clipboard at the end of the line or inserts it
+-- at the caret, and in both cases leaves the caret at the end (sometimes a
+-- frame later). Put the text where the caret was and the caret right after it.
 local function fix_paste(inp, now_text)
     local w = paste_watch
     if ticks > w.until_tick then paste_watch = nil; return end
     if now_text == w.text then return end
+    local old, at = w.text, w.caret
+    -- one character is typing, not a paste: keep watching from the new state
+    if #now_text == #old + 1 then
+        w.text, w.caret = now_text, get_caret(inp)
+        return
+    end
     paste_watch = nil
-    if #now_text <= #w.text or string.sub(now_text, 1, #w.text) ~= w.text then return end
-    if w.caret >= #w.text then return end -- caret was at the end: nothing to fix
-    local inserted = string.sub(now_text, #w.text + 1)
-    -- the game separates the paste with a space; drop it when inserting mid-line
-    if string.sub(inserted, 1, 1) == " " then inserted = string.sub(inserted, 2) end
-    local new_text = string.sub(w.text, 1, w.caret) .. inserted .. string.sub(w.text, w.caret + 1)
-    set_text_caret(inp, new_text, w.caret + #inserted)
-    log("paste moved to caret " .. w.caret .. ": [" .. new_text .. "]")
+    if #now_text <= #old then return end
+    local head, tail = string.sub(old, 1, at), string.sub(old, at + 1)
+    local new_text, caret
+    if string.sub(now_text, 1, #head) == head
+       and (tail == "" or string.sub(now_text, -#tail) == tail) then
+        -- inserted at the caret: only the caret is wrong
+        new_text, caret = now_text, #now_text - #tail
+    elseif string.sub(now_text, 1, #old) == old then
+        -- appended at the end: move it to the caret
+        local inserted = string.sub(now_text, #old + 1)
+        -- the game separates the paste with a space; drop it when inserting mid-line
+        if string.sub(inserted, 1, 1) == " " then inserted = string.sub(inserted, 2) end
+        new_text, caret = head .. inserted .. tail, at + #inserted
+    else
+        return
+    end
+    set_text_caret(inp, new_text, caret)
+    caret_hold = { text = new_text, caret = caret, until_tick = ticks + 10 }
+    -- Ctrl may still be held for another V, which mods never see: keep watching
+    paste_watch = { text = new_text, caret = caret, until_tick = ticks + 120 }
+    log("paste at caret " .. at .. ": [" .. new_text .. "] caret=" .. caret)
 end
 
 -- 2 + 3. react to history jumps ------------------------------------------------
@@ -379,6 +403,14 @@ function on_game_tick(delta)
             end
         end
         if paste_watch ~= nil then fix_paste(inp, cur.text); cur = read_state(inp) end
+        if caret_hold ~= nil then
+            if ticks > caret_hold.until_tick or cur.text ~= caret_hold.text then
+                caret_hold = nil
+            elseif cur.caret ~= caret_hold.caret then
+                inp.set_caret_column(caret_hold.caret, true, 0)
+                cur = read_state(inp)
+            end
+        end
         -- history jumps first: undoing an Up inside the dropdown must win over
         -- the hidden-tail bookkeeping below
         local reverted = false
@@ -405,7 +437,7 @@ function on_game_tick(delta)
         elseif split ~= nil then
             update_split(inp, cur)
             cur = read_state(inp)
-        elseif config.midline_hints and prev ~= nil and paste_watch == nil and typed_midline(prev, cur) then
+        elseif config.midline_hints and prev ~= nil and caret_hold == nil and typed_midline(prev, cur) then
             enter_split(inp, cur.text, cur.caret)
             cur = read_state(inp)
         end
