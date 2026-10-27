@@ -9,7 +9,7 @@ Quality-of-life fixes for the **netsh** terminal in Tower Networking Inc.
 ## Features
 
 - **Hints in the middle of a line.** Put the caret anywhere in a command and start typing (or press **Ctrl+Space**): the game's own hint dropdown opens for the word at the caret — addresses, keywords, everything the game normally suggests at the end of a line. Pick with ↓/↑ and **Tab**; the rest of the line stays intact.
-- **Up in the hint dropdown stays in the dropdown.** It no longer throws you into command history or jumps the caret to the start of the line.
+- **Up in the hint dropdown moves through the dropdown.** It no longer throws you into command history or jumps the caret to the start of the line; only Up on the top entry closes the dropdown and goes to the previous command.
 - **Your unfinished command survives history browsing.** Type something, press ↑ to look at older commands, press ↓ back past the newest one — your draft is back.
 - **Ctrl+V pastes at the caret**, not at the end of the line.
 
@@ -69,7 +69,7 @@ Any testing and bug reports are very welcome! Please [open an issue](https://git
 ## Можливості
 
 - **Підказки посередині рядка.** Постав курсор будь-де в команді й почни друкувати (або натисни **Ctrl+Space**) — відкриється звичайний ігровий список підказок для слова під курсором: адреси, ключові слова — все, що гра підказує в кінці рядка. Вибір — ↓/↑ і **Tab**, решта рядка лишається на місці.
-- **↑ у списку підказок лишається в списку** — більше не перекидає в історію команд і не кидає курсор на початок рядка.
+- **↑ у списку підказок рухає виділення по списку** — більше не перекидає в історію команд і не кидає курсор на початок рядка; лише ↑ на першому пункті закриває список і переходить до попередньої команди.
 - **Недописана команда не губиться** при перегляді історії: ↑ подивився старі команди, ↓ повернувся — чернетка на місці.
 - **Ctrl+V вставляє в місце курсора**, а не в кінець рядка.
 

@@ -349,7 +349,11 @@ local function on_text_changed(inp, cur)
 
     -- 2. Up pressed while the hint popup was open: the game jumped into
     --    history instead of moving the selection. Undo the jump.
-    if config.popup_up_fix and a ~= nil and prev.cc_n > 0 and now_hist and not prev_hist then
+    -- the line as the player sees it (the tail may be hidden for mid-line hints)
+    local typed = prev.text
+    if split ~= nil then typed = split.last .. split.tail end
+    if config.popup_up_fix and a ~= nil and prev.cc_n > 0 and now_hist and not prev_hist
+       and prev.cc_sel > 0 then
         -- the game moves the caret after this tick and set_text() does not
         -- re-run its suggestions, so finish the undo on the next tick
         pending_revert = { text = prev.text, caret = prev.caret }
@@ -362,11 +366,17 @@ local function on_text_changed(inp, cur)
 
     -- 3. first jump from typed text into history: keep the draft as the
     --    newest history entry so Down from the real newest brings it back
+    -- Up from the top entry of the dropdown (or with no dropdown): a real
+    -- history jump. Drop the hidden-tail state; the whole line is the draft.
+    if a ~= nil and now_hist and not prev_hist and split ~= nil then
+        split = nil
+        pcall(function() inp.cancel_code_completion() end)
+    end
     if config.keep_history_draft and a ~= nil and now_hist and not prev_hist
-       and prev.text ~= "" and injected_draft == nil then
-        inp.command_history:append(prev.text)
-        injected_draft = prev.text
-        log("draft kept in history: [" .. prev.text .. "] size=" .. num(inp.command_history:size()))
+       and typed ~= "" and injected_draft == nil then
+        inp.command_history:append(typed)
+        injected_draft = typed
+        log("draft kept in history: [" .. typed .. "] size=" .. num(inp.command_history:size()))
     end
 
     -- command executed (field cleared): take our draft entry back out
@@ -468,13 +478,19 @@ function on_game_tick(delta)
         if config.popup_up_fix and not reverted and prev ~= nil and prev.cc_n > 0
            and cur.text == prev.text and cur.caret == 0 and prev.caret > 0
            and ticks - home_tick > 2 then
-            pending_revert = { text = prev.text, caret = prev.caret }
-            pending_sel = math.max(prev.cc_sel - 1, 0)
-            pending_until = ticks + 30
             set_text_caret(inp, prev.text, prev.caret)
+            if prev.cc_sel > 0 then
+                pending_revert = { text = prev.text, caret = prev.caret }
+                pending_sel = prev.cc_sel - 1
+                pending_until = ticks + 30
+                reverted = true
+                log("popup Up at line start: caret restored, selection -> " .. pending_sel)
+            else
+                -- Up from the top entry with no older command: just close the dropdown
+                pcall(function() inp.cancel_code_completion() end)
+                log("popup Up at top entry, no history: dropdown closed")
+            end
             cur = read_state(inp)
-            reverted = true
-            log("popup Up at line start: caret restored, selection -> " .. pending_sel)
         end
         if reverted or pending_revert ~= nil then
             -- the dropdown is being restored; leave the hidden tail alone
