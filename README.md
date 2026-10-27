@@ -40,6 +40,22 @@ Each feature can be switched off at the top of `entry.lua` (between the `MOD CON
 
 Tested on Tower Networking Inc **0.13.3** (Godot 4.6.2) with luajit-support 0.2.0. It reads the netsh field's state each tick and changes nothing outside netsh; saves are not touched.
 
+## Bug reports & testing
+
+Any testing and bug reports are very welcome! Please [open an issue](https://github.com/SchlafenderFox/netsh-qol/issues) and include:
+
+1. **Game version** (shown in the main menu, e.g. `0.13.3`) and mod version.
+2. **What you typed** — the command, where the caret was, which keys you pressed.
+3. **What happened vs. what you expected.** A screenshot of the netsh window helps.
+4. **The mod's log**, if you can: set `debug_logging = true` at the top of `entry.lua`, reproduce the problem, **quit the game** (the log is only fully written on exit) and copy the lines starting with `[netsh-qol]` from `logs/godot.log` (next to the `mods` folder).
+
+### Known limitations
+
+- Mods can't see **Enter**, **Tab**, **↑** or **↓** — the input field swallows them — so the mod reacts to what changed in the field instead. A very fast key sequence may occasionally slip through.
+- **Enter while the hint dropdown is open mid-line** runs the visible part first (see above).
+- **Ctrl+Space** inserts a space before the mod removes it; on a slow frame you may see it flash.
+- Tested only on **0.13.3**; a game update that changes netsh may break the mod.
+
 ---
 
 # netsh QoL (українською)
@@ -77,6 +93,22 @@ Tested on Tower Networking Inc **0.13.3** (Godot 4.6.2) with luajit-support 0.2.
 ## Налаштування
 
 Кожну функцію можна вимкнути вгорі `entry.lua` (між мітками `MOD CONFIGURATION`): `midline_hints`, `popup_up_fix`, `keep_history_draft`, `paste_at_caret`. `debug_logging = true` пише дії мода в `logs/godot.log`.
+
+## Баг-репорти та тестування
+
+Будь-яке тестування й повідомлення про баги дуже вітаються! [Створи issue](https://github.com/SchlafenderFox/netsh-qol/issues) і додай:
+
+1. **Версію гри** (видно в головному меню, напр. `0.13.3`) і версію мода.
+2. **Що ти вводив** — команду, де стояв курсор, які клавіші натискав.
+3. **Що сталося і що мало статися.** Скріншот вікна netsh дуже допоможе.
+4. **Лог мода**, якщо можеш: постав `debug_logging = true` вгорі `entry.lua`, повтори проблему, **вийди з гри** (лог повністю записується лише при виході) і скопіюй рядки `[netsh-qol]` з `logs/godot.log` (поруч із папкою `mods`).
+
+### Відомі обмеження
+
+- Моди не бачать **Enter**, **Tab**, **↑** і **↓** — їх забирає поле вводу, — тож мод реагує на зміни в полі. Дуже швидка послідовність клавіш зрідка може проскочити.
+- **Enter при відкритому списку посередині рядка** спершу виконує видиму частину (див. вище).
+- **Ctrl+Space** спершу вставляє пробіл, який мод потім прибирає; на повільному кадрі він може блимнути.
+- Перевірено лише на **0.13.3**; оновлення гри, що змінить netsh, може зламати мод.
 
 ## Сумісність
 
