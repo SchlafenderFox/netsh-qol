@@ -233,6 +233,17 @@ local function typed_midline(p, c)
     return string.sub(c.text, 1, c.caret - 1) .. string.sub(c.text, c.caret + 1) == p.text
 end
 
+-- deleting one character in the middle of the line (Backspace or Delete),
+-- leaving part of a word before the caret?
+local function deleted_midline(p, c)
+    if c.caret >= #c.text or #c.text ~= #p.text - 1 or c.caret == 0 then return false end
+    if string.sub(c.text, c.caret, c.caret) == " " then return false end
+    local head, tail = string.sub(c.text, 1, c.caret), string.sub(c.text, c.caret + 1)
+    return string.sub(p.text, 1, #head) == head and string.sub(p.text, -#tail) == tail
+end
+
+local pending_del = nil -- { text, caret, at_tick }: open hints after a mid-line deletion
+
 local function update_split(inp, cur)
     if cur.text == "" then
         local cut, full = split.last, split.last .. split.tail
@@ -240,8 +251,14 @@ local function update_split(inp, cur)
         on_cut_enter(inp, cut, full)
         return
     end
-    if cur.caret ~= #cur.text then exit_split(inp, cur); return end
-    if cur.cc_n == 0 and ticks > split.until_tick then exit_split(inp, cur); return end
+    if cur.caret ~= #cur.text then
+        log(string.format("split exit: caret %d ~= len %d", cur.caret, #cur.text))
+        exit_split(inp, cur); return
+    end
+    if cur.cc_n == 0 and ticks > split.until_tick then
+        log("split exit: no dropdown")
+        exit_split(inp, cur); return
+    end
     if cur.cc_n > 0 then split.until_tick = ticks + 6 end
     -- plain typing / deleting keeps refining the word
     if string.sub(cur.text, 1, #split.last) == split.last or string.sub(split.last, 1, #cur.text) == cur.text then
@@ -292,7 +309,34 @@ end
 
 -- 2 + 3. react to history jumps ------------------------------------------------
 
+-- Tab with the game's own dropdown open in the middle of the line: the game
+-- puts the pick in place of the LAST word of the line. Move it to the word
+-- under the caret and give the last word back.
+local function fix_midline_tab(inp, cur)
+    -- (the game's hint list after a deletion is not a CodeEdit popup, so
+    -- cc_n can't be trusted here; the pick must extend the caret word instead)
+    if prev.caret >= #prev.text then return false end
+    local a, b = prev.text, cur.text
+    local lw = #a
+    while lw > 0 and string.sub(a, lw, lw) ~= " " do lw = lw - 1 end
+    if prev.caret >= lw or string.sub(b, 1, lw) ~= string.sub(a, 1, lw) then return false end
+    local pick = string.gsub(string.sub(b, lw + 1), "%s+$", "")
+    if pick == "" or pick == string.sub(a, lw + 1) then return false end
+    local ws = prev.caret
+    while ws > 0 and string.sub(a, ws, ws) ~= " " do ws = ws - 1 end
+    local partial = string.sub(a, ws + 1, prev.caret)
+    if partial == "" or string.sub(pick, 1, #partial) ~= partial then return false end
+    local we = prev.caret
+    while we < #a and string.sub(a, we + 1, we + 1) ~= " " do we = we + 1 end
+    local fixed = string.sub(a, 1, ws) .. pick .. string.sub(a, we + 1)
+    set_text_caret(inp, fixed, ws + #pick)
+    pcall(function() inp.cancel_code_completion() end)
+    log("mid-line Tab: [" .. b .. "] -> [" .. fixed .. "]")
+    return true
+end
+
 local function on_text_changed(inp, cur)
+    if config.midline_hints and split == nil and fix_midline_tab(inp, cur) then return true end
     -- typing or deleting changes the text by growing/shrinking it at the end;
     -- a history jump replaces it wholesale
     local a, b = prev.text, cur.text
@@ -437,9 +481,22 @@ function on_game_tick(delta)
         elseif split ~= nil then
             update_split(inp, cur)
             cur = read_state(inp)
-        elseif config.midline_hints and prev ~= nil and caret_hold == nil and typed_midline(prev, cur) then
+        elseif config.midline_hints and prev ~= nil and caret_hold == nil
+               and typed_midline(prev, cur) then
             enter_split(inp, cur.text, cur.caret)
             cur = read_state(inp)
+        elseif config.midline_hints and prev ~= nil and caret_hold == nil and deleted_midline(prev, cur) then
+            -- the game is still busy with the Backspace for a few frames; open
+            -- the hints like Ctrl+Space does once the field has settled
+            pending_del = { text = cur.text, caret = cur.caret, at_tick = ticks + 15 }
+        elseif pending_del ~= nil then
+            if cur.text ~= pending_del.text or cur.caret ~= pending_del.caret then
+                pending_del = nil
+            elseif ticks >= pending_del.at_tick then
+                pending_del = nil
+                enter_split(inp, cur.text, cur.caret)
+                cur = read_state(inp)
+            end
         end
         prev = cur
     end)
