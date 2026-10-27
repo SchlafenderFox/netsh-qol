@@ -40,7 +40,7 @@ Each feature can be switched off at the top of `entry.lua` (between the `MOD CON
 
 ## Compatibility
 
-Tested on Tower Networking Inc **0.13.3** (Godot 4.6.2) with luajit-support 0.2.0. It reads the netsh field's state each tick and changes nothing outside netsh; saves are not touched.
+Tested on Tower Networking Inc **0.13.3** (Godot 4.6.2) with the official luajit-support 0.2.1 (`continuous-gnu-beta`). It reads the netsh field's state each tick and changes nothing outside netsh; saves are not touched.
 
 ## Bug reports & testing
 
@@ -116,4 +116,4 @@ Any testing and bug reports are very welcome! Please [open an issue](https://git
 
 ## Сумісність
 
-Перевірено на Tower Networking Inc **0.13.3** (Godot 4.6.2) з luajit-support 0.2.0. Мод лише читає стан поля netsh і нічого не змінює поза ним; збереження не зачіпає.
+Перевірено на Tower Networking Inc **0.13.3** (Godot 4.6.2) з офіційним luajit-support 0.2.1 (`continuous-gnu-beta`). Мод лише читає стан поля netsh і нічого не змінює поза ним; збереження не зачіпає.
