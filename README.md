@@ -2,6 +2,8 @@
 
 Quality-of-life fixes for the **netsh** terminal in Tower Networking Inc.
 
+> This mod is meant as a **temporary** solution. We'd be really happy to see these improvements become part of the game itself — until the developers get a chance to consider them, this mod makes working in the terminal a lot more comfortable.
+
 *Українською — нижче.*
 
 ## Features
@@ -61,6 +63,8 @@ Any testing and bug reports are very welcome! Please [open an issue](https://git
 # netsh QoL (українською)
 
 Покращення для терміналу **netsh** у Tower Networking Inc.
+
+> Цей мод, можливо, **тимчасовий**. Ми були б дуже раді, якби ці покращення з'явилися в самій грі, — а поки розробники розглядають цей варіант, мод допомагає зручніше працювати з терміналом.
 
 ## Можливості
 
