@@ -1,0 +1,5 @@
+# local dev files (not part of the mod)
+dist/
+netsh-qol/
+netsh-probe/
+ref-tnimods/
