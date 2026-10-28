@@ -2,7 +2,7 @@
 	"id": "netsh-qol",
 	"name": "netsh QoL",
 	"authors": [ "Tuman" ],
-	"version": "1.0.4",
+	"version": "1.0.5",
 	"description": [
 		"Quality-of-life fixes for the netsh terminal.\n\n✨ Features\n• Hints mid-line: type anywhere in a command (or press Ctrl+Space) and the game's own hint dropdown opens for the word at the caret; pick with Up/Down + Tab, the rest of the line stays intact\n• Up inside the hint dropdown stays in the dropdown (no jump into history or to the line start)\n• Your unfinished command survives browsing history with Up/Down\n• Ctrl+V pastes at the caret, not at the end of the line\n\n⚠️ Enter while the dropdown is open runs the visible part of the line (mods can't intercept Enter). If the game rejects it, the mod runs the full command; otherwise it puts the full line back for you to check. Pick a hint with Tab before Enter to avoid this.\n\n⚙️ Each feature can be turned off at the top of entry.lua."
 	],

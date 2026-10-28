@@ -58,6 +58,21 @@ local trace_ticks = 0       -- debug: log the field for a few ticks after we edi
 
 local function log(msg) if config.debug_logging then print(msg) end end
 
+-- Boundary calls go through these shared functions with pcall(fn, args...):
+-- a `pcall(function() ... end)` allocates a closure each time, and the
+-- sandbox heap (~1.8 MB, out-of-memory is fatal) can't take that every tick.
+local function _focus_owner()
+    local f = ModApiV1.get_base_ui():get_viewport():gui_get_focus_owner()
+    if f ~= nil and tostring(f:get_path()):find("NetShell/TextInput", 1, true) then return f end
+    return nil
+end
+local function _has_focus(inp) return inp:has_focus(false) end
+local function _cancel(inp) inp.cancel_code_completion() end
+local function _insert(inp, s) inp.insert_text_at_caret(s, -1) end
+local function _print_line(disp, s) disp.print_line(s) end
+local function _exec(shell, cmd, disp) shell.exec_command(cmd, disp) end
+local function cancel_hints(inp) pcall(_cancel, inp) end
+
 -- While the world is being torn down (leaving to the menu) get_game_world()
 -- returns a null object and the next call on it throws outside pcall's reach,
 -- even while get_devices() still lists devices. The base UI lives above the
@@ -65,18 +80,13 @@ local function log(msg) if config.debug_logging then print(msg) end end
 -- Never keep a node across ticks (a freed node faults the sandbox): look up the
 -- focused control afresh each time and use it only if it is the netsh field.
 local function find_input()
-    input = nil
-    pcall(function()
-        local f = ModApiV1.get_base_ui():get_viewport():gui_get_focus_owner()
-        if f ~= nil and tostring(f:get_path()):find("NetShell/TextInput", 1, true) then
-            input = f
-        end
-    end)
+    local ok, f = pcall(_focus_owner)
+    input = ok and f or nil
     return input
 end
 
 local function has_focus(inp)
-    local ok, v = pcall(function() return inp:has_focus(false) end)
+    local ok, v = pcall(_has_focus, inp)
     return ok and v == true
 end
 
@@ -119,7 +129,7 @@ local split = nil -- { tail, last, until_tick } while the tail is hidden
 local function retype(inp, text)
     local head = string.sub(text, 1, #text - 1)
     set_text_caret(inp, head, #head)
-    pcall(function() inp.insert_text_at_caret(string.sub(text, -1), -1) end)
+    pcall(_insert, inp, string.sub(text, -1))
 end
 
 local function enter_split(inp, text, caret)
@@ -165,7 +175,7 @@ local function exit_split(inp, cur)
     local caret = math.min(cur.caret, #prefix)
     set_text_caret(inp, prefix .. tail, caret)
     -- the game's dropdown still lists hints for the old caret word: close it
-    pcall(function() inp.cancel_code_completion() end)
+    cancel_hints(inp)
     log("split end (" .. (completed and "completed" or "kept") .. "): [" .. prefix .. tail .. "]")
 end
 
@@ -216,8 +226,8 @@ function on_cut_enter(inp, cut, full)
     local failed = out ~= nil and string.find(out, "%S") ~= nil
     if failed and display ~= nil then
         replace_history_tail(inp, cut, full)
-        pcall(function() display.print_line("> " .. full) end)
-        local ok, err = pcall(function() shell.exec_command(full, display) end)
+        pcall(_print_line, display, "> " .. full)
+        local ok, err = pcall(_exec, shell, full, display)
         log("cut command failed; ran the full command (ok=" .. tostring(ok) .. " " .. tostring(err) .. ")")
     else
         set_text_caret(inp, full, #full)
@@ -330,7 +340,7 @@ local function fix_midline_tab(inp, cur)
     while we < #a and string.sub(a, we + 1, we + 1) ~= " " do we = we + 1 end
     local fixed = string.sub(a, 1, ws) .. pick .. string.sub(a, we + 1)
     set_text_caret(inp, fixed, ws + #pick)
-    pcall(function() inp.cancel_code_completion() end)
+    cancel_hints(inp)
     log("mid-line Tab: [" .. b .. "] -> [" .. fixed .. "]")
     return true
 end
@@ -370,7 +380,7 @@ local function on_text_changed(inp, cur)
     -- history jump. Drop the hidden-tail state; the whole line is the draft.
     if a ~= nil and now_hist and not prev_hist and split ~= nil then
         split = nil
-        pcall(function() inp.cancel_code_completion() end)
+        cancel_hints(inp)
     end
     if config.keep_history_draft and a ~= nil and now_hist and not prev_hist
        and typed ~= "" and injected_draft == nil then
@@ -391,129 +401,147 @@ local function on_text_changed(inp, cur)
     return false
 end
 
+-- GC discipline (as in Tylerun's mods): keep the collector stopped while we
+-- hold game objects, and collect at the end of each callback.
+local function settle()
+    collectgarbage("collect")
+    collectgarbage("stop")
+end
+
 function on_mod_load()
+    collectgarbage("stop")
     print("netsh QoL loaded")
 end
 
+local function input_body(event)
+    if event:get_class() ~= "InputEventKey" then return end
+    if not event:is_pressed() then return end
+    local inp = find_input()
+    if inp == nil or not has_focus(inp) then return end
+    local key = event:get_keycode()
+    if key == KEY_HOME then home_tick = ticks end
+    if key == KEY_SPACE and event:is_ctrl_pressed() and config.midline_hints then
+        -- the field inserts a space for Ctrl+Space, sometimes before and
+        -- sometimes after this hook runs: complete on the next tick from
+        -- the state recorded before the key
+        if prev ~= nil then pending_complete = { text = prev.text, caret = prev.caret } end
+    elseif key == KEY_CTRL and config.paste_at_caret and not event:is_echo() and prev ~= nil then
+        paste_watch = { text = prev.text, caret = prev.caret, until_tick = ticks + 120 }
+    end
+end
+
 function on_player_input(event)
-    pcall(function()
-        if event:get_class() ~= "InputEventKey" then return end
-        if not event:is_pressed() then return end
-        local inp = find_input()
-        if inp == nil or not has_focus(inp) then return end
-        local key = event:get_keycode()
-        if key == KEY_HOME then home_tick = ticks end
-        if key == KEY_SPACE and event:is_ctrl_pressed() and config.midline_hints then
-            -- the field inserts a space for Ctrl+Space, sometimes before and
-            -- sometimes after this hook runs: complete on the next tick from
-            -- the state recorded before the key
-            if prev ~= nil then pending_complete = { text = prev.text, caret = prev.caret } end
-        elseif key == KEY_CTRL and config.paste_at_caret and not event:is_echo() and prev ~= nil then
-            paste_watch = { text = prev.text, caret = prev.caret, until_tick = ticks + 120 }
+    collectgarbage("stop")
+    local ok, err = pcall(input_body, event)
+    if not ok then log("input error: " .. tostring(err)) end
+    settle()
+end
+
+local function tick_body()
+    local inp = find_input()
+    if inp == nil then prev = nil; return end
+    local cur = read_state(inp)
+    if trace_ticks > 0 then
+        trace_ticks = trace_ticks - 1
+        log(string.format("trace text=[%s] caret=%d cc_n=%d", cur.text, cur.caret, cur.cc_n))
+    end
+    if pending_revert ~= nil then
+        local r = pending_revert
+        pending_revert = nil
+        -- retype the last character so the game rebuilds and shows its hints
+        retype(inp, r.text)
+        inp.set_caret_column(r.caret, true, 0)
+        cur = read_state(inp)
+        log("popup reopened: cc_n=" .. cur.cc_n)
+    end
+    if pending_complete ~= nil then
+        local base = pending_complete
+        pending_complete = nil
+        -- base is the state before the key, whenever the field inserted its space
+        if split ~= nil then
+            set_text_caret(inp, base.text, base.caret)
+        elseif base.caret < #base.text then
+            enter_split(inp, base.text, base.caret)
+        elseif base.text ~= "" then
+            retype(inp, base.text)
         end
-    end)
+        cur = read_state(inp)
+        trace_ticks = 3
+    end
+    if pending_sel ~= nil then
+        if cur.cc_n > 0 then
+            inp.set_code_completion_selected_index(math.min(pending_sel, cur.cc_n - 1))
+            pending_sel = nil
+            cur = read_state(inp)
+        elseif ticks > pending_until then
+            pending_sel = nil -- popup did not come back
+        end
+    end
+    if paste_watch ~= nil then fix_paste(inp, cur.text); cur = read_state(inp) end
+    if caret_hold ~= nil then
+        if ticks > caret_hold.until_tick or cur.text ~= caret_hold.text then
+            caret_hold = nil
+        elseif cur.caret ~= caret_hold.caret then
+            inp.set_caret_column(caret_hold.caret, true, 0)
+            cur = read_state(inp)
+        end
+    end
+    -- history jumps first: undoing an Up inside the dropdown must win over
+    -- the hidden-tail bookkeeping below
+    local reverted = false
+    if prev ~= nil and cur.text ~= prev.text then
+        reverted = on_text_changed(inp, cur)
+        if reverted then cur = read_state(inp) end
+    end
+    -- Up inside the dropdown with nothing (older) in history: the game keeps
+    -- the text but throws the caret to the line start and closes the
+    -- dropdown. Put the caret back and reopen the dropdown one entry up.
+    if config.popup_up_fix and not reverted and prev ~= nil and prev.cc_n > 0
+       and cur.text == prev.text and cur.caret == 0 and prev.caret > 0
+       and ticks - home_tick > 2 then
+        set_text_caret(inp, prev.text, prev.caret)
+        if prev.cc_sel > 0 then
+            pending_revert = { text = prev.text, caret = prev.caret }
+            pending_sel = prev.cc_sel - 1
+            pending_until = ticks + 30
+            reverted = true
+            log("popup Up at line start: caret restored, selection -> " .. pending_sel)
+        else
+            -- Up from the top entry with no older command: just close the dropdown
+            cancel_hints(inp)
+            log("popup Up at top entry, no history: dropdown closed")
+        end
+        cur = read_state(inp)
+    end
+    if reverted or pending_revert ~= nil then
+        -- the dropdown is being restored; leave the hidden tail alone
+    elseif split ~= nil then
+        update_split(inp, cur)
+        cur = read_state(inp)
+    elseif config.midline_hints and prev ~= nil and caret_hold == nil
+           and typed_midline(prev, cur) then
+        enter_split(inp, cur.text, cur.caret)
+        cur = read_state(inp)
+    elseif config.midline_hints and prev ~= nil and caret_hold == nil and deleted_midline(prev, cur) then
+        -- the game is still busy with the Backspace for a few frames; open
+        -- the hints like Ctrl+Space does once the field has settled
+        pending_del = { text = cur.text, caret = cur.caret, at_tick = ticks + 15 }
+    elseif pending_del ~= nil then
+        if cur.text ~= pending_del.text or cur.caret ~= pending_del.caret then
+            pending_del = nil
+        elseif ticks >= pending_del.at_tick then
+            pending_del = nil
+            enter_split(inp, cur.text, cur.caret)
+            cur = read_state(inp)
+        end
+    end
+    prev = cur
 end
 
 function on_game_tick(delta)
+    collectgarbage("stop")
     ticks = ticks + 1
-    pcall(function()
-        local inp = find_input()
-        if inp == nil then prev = nil; return end
-        local cur = read_state(inp)
-        if trace_ticks > 0 then
-            trace_ticks = trace_ticks - 1
-            log(string.format("trace text=[%s] caret=%d cc_n=%d", cur.text, cur.caret, cur.cc_n))
-        end
-        if pending_revert ~= nil then
-            local r = pending_revert
-            pending_revert = nil
-            -- retype the last character so the game rebuilds and shows its hints
-            retype(inp, r.text)
-            inp.set_caret_column(r.caret, true, 0)
-            cur = read_state(inp)
-            log("popup reopened: cc_n=" .. cur.cc_n)
-        end
-        if pending_complete ~= nil then
-            local base = pending_complete
-            pending_complete = nil
-            -- base is the state before the key, whenever the field inserted its space
-            if split ~= nil then
-                set_text_caret(inp, base.text, base.caret)
-            elseif base.caret < #base.text then
-                enter_split(inp, base.text, base.caret)
-            elseif base.text ~= "" then
-                retype(inp, base.text)
-            end
-            cur = read_state(inp)
-            trace_ticks = 3
-        end
-        if pending_sel ~= nil then
-            if cur.cc_n > 0 then
-                inp.set_code_completion_selected_index(math.min(pending_sel, cur.cc_n - 1))
-                pending_sel = nil
-                cur = read_state(inp)
-            elseif ticks > pending_until then
-                pending_sel = nil -- popup did not come back
-            end
-        end
-        if paste_watch ~= nil then fix_paste(inp, cur.text); cur = read_state(inp) end
-        if caret_hold ~= nil then
-            if ticks > caret_hold.until_tick or cur.text ~= caret_hold.text then
-                caret_hold = nil
-            elseif cur.caret ~= caret_hold.caret then
-                inp.set_caret_column(caret_hold.caret, true, 0)
-                cur = read_state(inp)
-            end
-        end
-        -- history jumps first: undoing an Up inside the dropdown must win over
-        -- the hidden-tail bookkeeping below
-        local reverted = false
-        if prev ~= nil and cur.text ~= prev.text then
-            reverted = on_text_changed(inp, cur)
-            if reverted then cur = read_state(inp) end
-        end
-        -- Up inside the dropdown with nothing (older) in history: the game keeps
-        -- the text but throws the caret to the line start and closes the
-        -- dropdown. Put the caret back and reopen the dropdown one entry up.
-        if config.popup_up_fix and not reverted and prev ~= nil and prev.cc_n > 0
-           and cur.text == prev.text and cur.caret == 0 and prev.caret > 0
-           and ticks - home_tick > 2 then
-            set_text_caret(inp, prev.text, prev.caret)
-            if prev.cc_sel > 0 then
-                pending_revert = { text = prev.text, caret = prev.caret }
-                pending_sel = prev.cc_sel - 1
-                pending_until = ticks + 30
-                reverted = true
-                log("popup Up at line start: caret restored, selection -> " .. pending_sel)
-            else
-                -- Up from the top entry with no older command: just close the dropdown
-                pcall(function() inp.cancel_code_completion() end)
-                log("popup Up at top entry, no history: dropdown closed")
-            end
-            cur = read_state(inp)
-        end
-        if reverted or pending_revert ~= nil then
-            -- the dropdown is being restored; leave the hidden tail alone
-        elseif split ~= nil then
-            update_split(inp, cur)
-            cur = read_state(inp)
-        elseif config.midline_hints and prev ~= nil and caret_hold == nil
-               and typed_midline(prev, cur) then
-            enter_split(inp, cur.text, cur.caret)
-            cur = read_state(inp)
-        elseif config.midline_hints and prev ~= nil and caret_hold == nil and deleted_midline(prev, cur) then
-            -- the game is still busy with the Backspace for a few frames; open
-            -- the hints like Ctrl+Space does once the field has settled
-            pending_del = { text = cur.text, caret = cur.caret, at_tick = ticks + 15 }
-        elseif pending_del ~= nil then
-            if cur.text ~= pending_del.text or cur.caret ~= pending_del.caret then
-                pending_del = nil
-            elseif ticks >= pending_del.at_tick then
-                pending_del = nil
-                enter_split(inp, cur.text, cur.caret)
-                cur = read_state(inp)
-            end
-        end
-        prev = cur
-    end)
+    local ok, err = pcall(tick_body)
+    if not ok then log("tick error: " .. tostring(err)) end
+    settle()
 end
